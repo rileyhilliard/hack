@@ -1,0 +1,26 @@
+{
+  "version": "1.0.0",
+  "description": "API server for the Coder Agent",
+  "main": "index.js",
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "scripts": {},
+  "dependencies": {},
+  "devDependencies": {},
+  "packageManager": "yarn@4.6.0",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "resolutions": {
+    "vite": "^6.0.6"
+  },
+  "overrides": {
+    "vite": "^6.0.6"
+  },
+  "volta": {
+    "node": "22.0.0",
+    "yarn": "4.6.0"
+  }
+}
