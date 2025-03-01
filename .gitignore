@@ -38,3 +38,6 @@ Thumbs.db
 # Misc
 .tmp/
 .temp/
+logs
+repos
+.yarn

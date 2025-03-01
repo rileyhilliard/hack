@@ -1,0 +1,16 @@
+{
+  "watch": ["src"],
+  "ext": "ts,js,json",
+  "ignore": ["node_modules", "dist", ".git"],
+  "delay": "500",
+  "verbose": true,
+  "env": {
+    "NODE_ENV": "development"
+  },
+  "exec": "node --experimental-specifier-resolution=node --inspect --trace-warnings --enable-source-maps ./node_modules/vite/bin/vite.js dev",
+  "events": {
+    "crash": "node ./scripts/notify-crash.js"
+  },
+  "restartable": "rs",
+  "exitcrash": false
+}
