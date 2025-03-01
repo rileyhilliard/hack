@@ -6,9 +6,34 @@
   "author": "",
   "license": "ISC",
   "type": "module",
-  "scripts": {},
-  "dependencies": {},
-  "devDependencies": {},
+  "scripts": {
+    "lint": "eslint . --fix",
+    "format": "prettier --write \"**/*.{ts,js.mjs,cjs,md}\"",
+    "dev": "nodemon"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.13.7",
+    "hono": "^4.6.14",
+    "http-proxy": "^1.18.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.3.0",
+    "@hono/vite-dev-server": "^0.17.0",
+    "@types/node": "^20.12.13",
+    "@typescript-eslint/eslint-plugin": "8.0.0-alpha.24",
+    "@typescript-eslint/parser": "8.0.0-alpha.24",
+    "eslint": "^9.3.0",
+    "eslint-config-prettier": "^9.1.0",
+    "nodemon": "^3.1.9",
+    "prettier": "^3.2.5",
+    "rollup": "^4.30.0",
+    "rollup-plugin-exclude-dependencies-from-bundle": "^1.1.23",
+    "tsx": "^4.19.3",
+    "typescript": "^5.4.5",
+    "vite": "^6.0.6",
+    "vite-tsconfig-paths": "^5.0.1",
+    "vitest": "^2.1.8"
+  },
   "packageManager": "yarn@4.6.0",
   "engines": {
     "node": ">=22.0.0"
