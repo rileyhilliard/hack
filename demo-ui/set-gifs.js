@@ -14,7 +14,8 @@ document.addEventListener("DOMContentLoaded", () => {
       const gifUrl = window.GIFS[randomIndex];
 
       // Create and display the image
-      const img = document.createElement("img");
+      // BUG NOTE: This is a bug, and will cause a JS error
+      // const img = document.createElement("img");
       img.src = gifUrl;
       img.alt = "Random GIF";
 
