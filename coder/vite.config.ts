@@ -29,7 +29,23 @@ export default defineConfig(() => {
         fileName: 'server'
       },
       rollupOptions: {
-        external: [],
+        external: [
+          /^node.*/,
+          'node:buffer',
+          'process',
+          'os',
+          'url',
+          'fs',
+          'path',
+          'http',
+          'https',
+          'zlib',
+          'stream',
+          'buffer',
+          'events',
+          'crypto',
+          'timers/promises'
+        ],
         output: {
           format: 'es',
           entryFileNames: '[name].js'

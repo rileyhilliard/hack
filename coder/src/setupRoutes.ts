@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
+import PostPr from '@/routes/pr/post';
 
 export function setupRoutes(app: Hono): void {
-  app.get('/', (c) => c.text("It's alive!"));
+  app.post('/pr', PostPr);
 }
