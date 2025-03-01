@@ -2,6 +2,7 @@ import { spawn } from 'child_process';
 import readline from 'readline';
 
 export function runCodebuff(repoPath: string, instructions: string, context: string): Promise<{ result: string }> {
+  console.warn('!!!Codebuff!!! is disabled due to cost, returning mock result');
   return new Promise((resolve, reject) => {
     const ___rez = `
       Codebuff: Reading files:
