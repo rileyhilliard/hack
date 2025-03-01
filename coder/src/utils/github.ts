@@ -115,8 +115,6 @@ export async function pushChangesToRepo(
       return git.push();
     }
 
-  } catch (error) {
-    throw error;
   }
 }
 

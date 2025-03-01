@@ -1,3 +1,3 @@
-# TriageFlow
+You are a GitHub Issue Triage Agent that creates GitHub issues from user feedback.
 
-TriageFlow transforms unclear user feedback and muddled GitHub issues into clear, actionable tasks by automating the triage and backlog grooming process with AI. It not only streamlines issue creation and prioritization but also automatically posts fix pull requests for feedback tickets, ensuring that critical fixes are addressed swiftly and teams stay in sync with real-time updates
+When incoming feedback is received, open a new GitHub issue with a clear title and use the feedback for the github issue body

@@ -2,36 +2,37 @@ import { spawn } from 'child_process';
 import readline from 'readline';
 
 export function runCodebuff(repoPath: string, instructions: string, context: string): Promise<{ result: string }> {
-  console.warn('!!!Codebuff!!! is disabled due to cost, returning mock result');
   return new Promise((resolve, reject) => {
-    const ___rez = `
-      Codebuff: Reading files:
-      - set-gifs.js
-      - index.html
-      - gifs.js
 
-      I can see the issue in the \`set-gifs.js\` file. There's a bug where the line that creates the image element is commented out, but then the code tries to use the \`img\` variable which hasn't been defined.
+    // console.warn('!!!Codebuff!!! is disabled due to cost, returning mock result');
+    // const ___rez = `
+    //   Codebuff: Reading files:
+    //   - set-gifs.js
+    //   - index.html
+    //   - gifs.js
 
-      Let me fix this issue:
+    //   I can see the issue in the \`set-gifs.js\` file. There's a bug where the line that creates the image element is commented out, but then the code tries to use the \`img\` variable which hasn't been defined.
 
-      - Editing file: set-gifs.js ...
+    //   Let me fix this issue:
 
-      The issue has been fixed. I uncommented the line \`const img = document.createElement('img');\` which was previously commented out. This was causing the error because the code was trying to use the \`img\` variable before it was defined.
+    //   - Editing file: set-gifs.js ...
 
-      Now when you click the "hit me" button, the application should properly:
-      1. Show a loading message
-      2. Create an image element
-      3. Set the source to a random GIF from your array
-      4. Display the image once it's loaded
-      5. Show an error message if the image fails to load
+    //   The issue has been fixed. I uncommented the line \`const img = document.createElement('img');\` which was previously commented out. This was causing the error because the code was trying to use the \`img\` variable before it was defined.
 
-      The error "ReferenceError: img is not defined" should no longer occur.
+    //   Now when you click the "hit me" button, the application should properly:
+    //   1. Show a loading message
+    //   2. Create an image element
+    //   3. Set the source to a random GIF from your array
+    //   4. Display the image once it's loaded
+    //   5. Show an error message if the image fails to load
 
-      Applying file changes, please wait.
+    //   The error "ReferenceError: img is not defined" should no longer occur.
 
-      - Updated set-gifs.js
-    `;
-    return resolve({ result: ___rez });
+    //   Applying file changes, please wait.
+
+    //   - Updated set-gifs.js
+    // `;
+    // return resolve({ result: ___rez });
     // disabling for now so I dont burn credits
 
     const folderName = repoPath.split('/').pop();

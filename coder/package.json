@@ -13,7 +13,9 @@
     "format:check": "prettier --check \"**/*.{ts,js,mjs,cjs,md,json}\" --ignore-path .prettierignore",
     "check": "yarn lint:check && npm run format:check",
     "fix": "yarn lint && npm run format",
-    "dev": "nodemon"
+    "dev": "nodemon",
+    "build": "vite build",
+    "serve": "vite serve"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.7",

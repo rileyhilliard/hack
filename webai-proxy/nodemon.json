@@ -8,9 +8,6 @@
     "NODE_ENV": "development"
   },
   "exec": "node --experimental-specifier-resolution=node --inspect --trace-warnings --enable-source-maps ./node_modules/vite/bin/vite.js dev",
-  "events": {
-    "crash": "node ./scripts/notify-crash.js"
-  },
   "restartable": "rs",
   "exitcrash": false
 }
