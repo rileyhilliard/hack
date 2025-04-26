@@ -21,8 +21,12 @@ export const createProxyConfig = (
     'Connection': 'keep-alive'
   };
 
-  // Add the X-API-Key header ONLY if it's provided in the config
-  if (config.targetApiKey) {
+  // Prioritize incoming Authorization header
+  if (req.headers.authorization) {
+    headers['Authorization'] = req.headers.authorization;
+  }
+  // Otherwise, use the targetApiKey from config if available
+  else if (config.targetApiKey) {
     headers['x-api-key'] = config.targetApiKey;
   }
 
