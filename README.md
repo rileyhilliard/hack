@@ -23,11 +23,6 @@ This NodeJS proxy server provides Ollama and OpenAI compatible interfaces for a 
     yarn install
     # or npm install
     ```
-3.  **Build:**
-    ```bash
-    yarn build
-    # or npm run build
-    ```
 
 ## Configuration
 
