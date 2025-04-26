@@ -1,86 +1,162 @@
 import { IncomingMessage, ServerResponse } from 'http';
 import { URL } from 'url';
-import { WebAIBody } from '../types';
 import { collectRequestBody, logRequest } from '../utils/request';
 import { createProxyConfig, setupProxyRequest } from '../utils/proxy';
 import { sendErrorResponse } from '../utils/response';
 import { Config } from '../types';
 
-/**
- * Response handlers for specific routes
- */
-export const responseHandlers = {
-  /**
-   * Handle root path request (health check)
-   */
+// Handlers for specific endpoints that don't need proxying
+export const directResponseHandlers = {
   handleRootPath: (res: ServerResponse): void => {
     res.writeHead(200, { "Content-Type": "text/plain" });
     res.end("Ollama is running");
-    console.log("n8n check, returning Ollama is running");
+    console.log("Health check request, responding OK");
   },
 
-  handleWebAiModelsCheck: (res: ServerResponse): void => {
+  handleOllamaTags: (res: ServerResponse): void => {
     res.writeHead(200, {
       "Content-Type": "application/json",
       "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "POST, OPTIONS",
-      "Access-Control-Allow-Headers": "authorization, content-type",
+      "Access-Control-Allow-Methods": "GET, OPTIONS", // Only GET needed for tags
+      "Access-Control-Allow-Headers": "content-type",
     });
+    // Respond with Ollama-compatible model list
     res.end(
       JSON.stringify({
         models: [
           {
-            name: "WebAI-LLM",
+            name: "webai-llm", // Use the desired model ID
             modified_at: new Date().toISOString(),
             size: 0,
-            digest: "sha256:o3mini",
+            digest: "webai-proxy", // Simplified digest
             details: {
               format: "gguf",
-              family: "ollama",
-              families: ["ollama"],
-              parameter_size: "3B",
-              quantization_level: "Q4_0"
+              family: "webai",
+              families: null, // Can be null
+              parameter_size: "N/A",
+              quantization_level: "N/A"
             }
           }
         ]
       })
     );
   },
+
+  handleOpenAIModels: (res: ServerResponse): void => {
+    res.writeHead(200, {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, OPTIONS",
+      "Access-Control-Allow-Headers": "authorization, content-type",
+    });
+    // Respond with OpenAI-compatible model list
+    res.end(
+      JSON.stringify({
+        object: "list",
+        data: [
+          {
+            id: "webai-llm", // Model ID clients will use
+            object: "model",
+            created: Math.floor(Date.now() / 1000),
+            owned_by: "webai-proxy",
+          },
+        ],
+      })
+    );
+  },
+
+  handleOptions: (res: ServerResponse): void => {
+    res.writeHead(204, {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS", // Allow relevant methods
+        "Access-Control-Allow-Headers": "authorization, content-type", // Allow relevant headers
+        "Access-Control-Max-Age": 86400, // Cache preflight for 1 day
+    });
+    res.end();
+  }
 };
 
-/**
- * Main request handler
- */
+// Main request handler: routes requests or proxies them
 export const handleRequest = async (
   req: IncomingMessage,
   res: ServerResponse,
   config: Config
 ): Promise<void> => {
+  const requestStartTime = process.hrtime.bigint();
   try {
-    const url = new URL(
-      req.url || "/",
-      `http://${config.targetDomain}:${config.targetPort}`
+    // Use localhost as base if host is missing in request URL
+    const base = `http://${req.headers.host || 'localhost'}`;
+    const url = new URL(req.url || "/", base);
+
+    // Handle CORS Preflight
+    if (req.method === 'OPTIONS') {
+        return directResponseHandlers.handleOptions(res);
+    }
+
+    // Direct handlers for specific paths
+    switch (url.pathname) {
+      case '/': return directResponseHandlers.handleRootPath(res);
+      case '/api/tags': return directResponseHandlers.handleOllamaTags(res);
+      case '/v1/models': return directResponseHandlers.handleOpenAIModels(res);
+    }
+
+    // --- Proxy Logic --- 
+
+    // Ensure request body is collected only when needed (POST/PUT)
+    let originalRequestBody = '';
+    if (req.method === 'POST' || req.method === 'PUT') {
+        originalRequestBody = await collectRequestBody(req);
+    }
+    logRequest(req, url, originalRequestBody); // Log before proxying
+
+    let proxyRequestBody: string | undefined;
+    let isStreamingRequest = false;
+    let modelRequested = 'webai-llm'; // Default model
+
+    // Parse body and determine proxy body structure
+    if (originalRequestBody) {
+        try {
+            const parsedBody = JSON.parse(originalRequestBody);
+            isStreamingRequest = !!parsedBody.stream;
+            modelRequested = parsedBody.model || modelRequested;
+
+            // Both Ollama (/api/chat) and OpenAI (/v1/chat/completions)
+            // requests are transformed to the format expected by the target /prompt endpoint.
+            if (url.pathname === "/api/chat" || url.pathname === "/v1/chat/completions") {
+                 proxyRequestBody = JSON.stringify({ message: parsedBody.messages });
+            } else {
+                // For other paths, proxy the original body
+                proxyRequestBody = originalRequestBody;
+            }
+        } catch (parseError) {
+            console.error("Error parsing request body:", parseError);
+            return sendErrorResponse(res, 400, "Invalid JSON request body");
+        }
+    } else if (req.method === 'POST' || req.method === 'PUT') {
+        // Handle POST/PUT requests that require a body but didn't provide one
+        return sendErrorResponse(res, 400, "Request body required but missing");
+    }
+
+    // Create config and execute proxy request
+    const proxyConfig = createProxyConfig(req, proxyRequestBody || '', config);
+    setupProxyRequest(
+        proxyConfig,
+        proxyRequestBody || '',
+        res,
+        originalRequestBody || '',
+        isStreamingRequest,
+        url.pathname,
+        modelRequested,
+        config,
+        requestStartTime
     );
 
-    // Handle special routes
-    if (url.pathname === "/") {
-      return responseHandlers.handleRootPath(res);
-    }
-
-    if (url.pathname === "/api/tags") {
-      return responseHandlers.handleWebAiModelsCheck(res);
-    }
-
-    // Process regular requests
-    const body = await collectRequestBody(req);
-    logRequest(req, url, body);
-
-    const webAiBody = body ? { message: JSON.parse(body).messages } : "";
-    const proxyConfig = createProxyConfig(req, JSON.stringify(webAiBody), config);
-
-    setupProxyRequest(proxyConfig, webAiBody, res, body);
   } catch (error) {
-    console.error("Server Error:", error);
-    sendErrorResponse(res, 500, "Server Error");
+    // General error handling
+    console.error("handleRequest Error:", error);
+    // Ensure response isn't already sent/ended before sending error
+    if (!res.writableEnded) {
+        sendErrorResponse(res, 500, "Internal Server Error");
+    }
   }
 };

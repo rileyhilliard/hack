@@ -5,7 +5,9 @@
   "delay": "500",
   "verbose": true,
   "env": {
-    "NODE_ENV": "development"
+    "NODE_ENV": "development",
+    "TARGET_API_KEY": "itdx3q3wpedgd38ikklejm"
+    
   },
   "exec": "node --experimental-specifier-resolution=node --inspect --trace-warnings --enable-source-maps ./node_modules/vite/bin/vite.js dev",
   "restartable": "rs",

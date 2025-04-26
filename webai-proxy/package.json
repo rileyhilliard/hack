@@ -9,12 +9,15 @@
   "scripts": {
     "lint": "eslint . --fix",
     "format": "prettier --write \"**/*.{ts,js.mjs,cjs,md}\"",
-    "dev": "nodemon --watch src --exec \"node esbuild.js && node dist/server.js\"",
-    "build": "node esbuild.js",
-    "start": "node dist/server.js"
+    "dev": "nodemon --watch src --exec \"node esbuild.js && node --inspect dist/server.js\"",
+    "build": "rm -rf dist && node esbuild.js",
+    "start": "yarn build && node dist/server.js",
+    "start:prod": "node dist/server.js",
+    "test": "vitest"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.7",
+    "dotenv": "^16.5.0",
     "hono": "^4.6.14",
     "http-proxy": "^1.18.1"
   },
@@ -27,7 +30,10 @@
     "esbuild": "^0.25.0",
     "eslint": "^9.3.0",
     "eslint-config-prettier": "^9.1.0",
+    "execa": "^9.3.0",
+    "get-port": "^7.1.0",
     "nodemon": "^3.1.9",
+    "openai": "^4.96.0",
     "prettier": "^3.2.5",
     "rollup": "^4.30.0",
     "rollup-plugin-exclude-dependencies-from-bundle": "^1.1.23",

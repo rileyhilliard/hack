@@ -18,7 +18,7 @@ async function build() {
       outfile: resolve(__dirname, 'dist/server.js'),
       format: 'esm',
       sourcemap: true,
-      external: ['http', 'util', 'child_process', 'url', 'path', 'fs', 'os', 'net'],
+      external: ['http', 'util', 'child_process', 'url', 'path', 'fs', 'os', 'net', 'dotenv'],
       // Ignore TypeScript errors
       logLevel: 'info',
       logLimit: 0,

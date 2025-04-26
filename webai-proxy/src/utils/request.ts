@@ -17,16 +17,15 @@ export const collectRequestBody = async (req: IncomingMessage): Promise<string> 
  */
 export const logRequest = (req: IncomingMessage, url: URL, body?: string): void => {
   console.log("\n=== Incoming Request ===");
-  console.log("Method:", req.method);
-  console.log("URL:", url.pathname);
-  console.log("Query params:", Object.fromEntries([...url.searchParams.entries()]));
-  console.log("Headers:", req.headers);
+  console.log(`  ${req.method} ${url.pathname}${url.search}`);
+  console.log("  Headers:", req.headers);
 
   if (body) {
     try {
-      console.log("Body:", JSON.parse(body));
+      console.log("  Body:", JSON.parse(body));
     } catch {
-      console.log("Body (raw):", body);
+      console.log("  Body (raw):", body);
     }
   }
+  console.log("======================");
 }; 

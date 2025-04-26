@@ -1,15 +1,19 @@
 import { Config } from '../types/index.js';
 
+// Default values - will be overridden by .env file if present
 export const DEFAULT_CONFIG: Config = {
   targetDomain: "localhost",
   targetPort: 10501,
   proxyDomain: "localhost",
   proxyPort: 8080,
+  targetApiKey: undefined
 };
 
+// Reads config primarily from environment variables (.env file), with defaults as fallback.
 export const getConfig = (): Config => ({
-  targetDomain: process.argv[2] || DEFAULT_CONFIG.targetDomain,
-  targetPort: parseInt(process.argv[3]) || DEFAULT_CONFIG.targetPort,
-  proxyDomain: process.argv[4] || DEFAULT_CONFIG.proxyDomain,
-  proxyPort: parseInt(process.argv[5]) || DEFAULT_CONFIG.proxyPort,
+  targetDomain: process.env.TARGET_DOMAIN || DEFAULT_CONFIG.targetDomain,
+  targetPort: parseInt(process.env.TARGET_PORT || String(DEFAULT_CONFIG.targetPort)),
+  proxyDomain: process.env.PROXY_DOMAIN || DEFAULT_CONFIG.proxyDomain,
+  proxyPort: parseInt(process.env.PROXY_PORT || String(DEFAULT_CONFIG.proxyPort)),
+  targetApiKey: process.env.TARGET_API_KEY || DEFAULT_CONFIG.targetApiKey
 });

@@ -2,7 +2,7 @@ import http from 'http';
 import { Config } from '../types';
 
 /**
- * Test connection to target server
+ * Test connection to target server by making a simple GET request
  */
 export async function testTargetConnection(config: Config): Promise<boolean> {
   return new Promise((resolve) => {
