@@ -274,4 +274,32 @@ describe('Ollama Compatible Endpoints', () => {
     expect(errorData.error).toContain('Invalid JSON');
   });
 
+  // --- Authentication Scenario Tests --- TODO: Add if TARGET_API_KEY is implemented for Ollama paths
+
+  it('POST /api/chat with INCORRECT Bearer token should return specific 401 message', async () => {
+    const requestBody = {
+      model: 'webai-llm',
+      messages: [{ role: 'user', content: 'Hello?' }],
+      stream: false,
+    };
+
+    const response = await fetch(`${PROXY_URL}/api/chat`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer incorrect-token-value' // Correct format, wrong key
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    // Expect failure because the proxy should forward the incorrect token, and the backend should reject it.
+    expect(response.status).toBe(401);
+    expect(response.headers.get('content-type')).toContain('application/json');
+    const errorData = await response.json();
+    expect(errorData).toHaveProperty('error');
+    expect(errorData.error).toContain('Authentication error: Unauthorized access to the target server.');
+    expect(errorData.error).toContain('Setting the TARGET_API_KEY environment variable');
+    expect(errorData.error).toContain('Sending an \'Authorization: Bearer <your-token>\' header');
+  });
+
 }); 

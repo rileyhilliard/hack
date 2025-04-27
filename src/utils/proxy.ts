@@ -180,19 +180,36 @@ export const handleProxyResponse = async (
     // Handle backend errors (>= 400)
     if (backendStatusCode >= 400) {
         console.error(`Proxy received backend error: ${backendStatusCode}`);
-        // Attempt to parse error details from the backend response body
-        const errorDetails = await accumulateAndParseBackendResponse(proxyRes, modelRequested)
-                                   .catch(err => ({ content: `Backend error details unavailable: ${err.message}`, stats: {} }));
-        let responseBody: string | object;
-        try {
-            responseBody = JSON.parse(errorDetails.content);
-        } catch {
-            // If backend error body isn't JSON, wrap it
-            responseBody = { error: "Backend Error", statusCode: backendStatusCode, details: errorDetails.content };
+
+        // Specific handling for 401 Unauthorized
+        if (backendStatusCode === 401) {
+            return sendErrorResponse(
+                res,
+                401,
+                "Authentication error: Unauthorized access to the target server. " +
+                "Ensure the correct authentication token is provided. This can be done via: " +
+                "1) Setting the TARGET_API_KEY environment variable in the proxy's .env file, OR " +
+                "2) Sending an 'Authorization: Bearer <your-token>' header with your request."
+            );
+        } else {
+            // Generic handling for other 4xx/5xx errors
+            const errorDetails = await accumulateAndParseBackendResponse(proxyRes, modelRequested)
+                                       .catch(err => ({ content: `Backend error details unavailable: ${err.message}`, stats: {} }));
+            let responseBody: string | object;
+            try {
+                responseBody = JSON.parse(errorDetails.content);
+            } catch {
+                // If backend error body isn't JSON, wrap it
+                responseBody = { error: "Backend Error", statusCode: backendStatusCode, details: errorDetails.content };
+            }
+            // Use backend headers but ensure content type is json
+            const responseHeaders = { ...backendHeaders, 'content-type': 'application/json' };
+            // Remove transfer-encoding if present, as we are sending a single response body
+            delete responseHeaders['transfer-encoding'];
+            res.writeHead(backendStatusCode, responseHeaders);
+            res.end(JSON.stringify(responseBody));
+            return;
         }
-        res.writeHead(backendStatusCode, {...backendHeaders, 'content-type': 'application/json'});
-        res.end(JSON.stringify(responseBody));
-        return;
     }
 
     // Handle Streaming Client Requests
