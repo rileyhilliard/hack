@@ -66,7 +66,7 @@ const accumulateAndParseBackendResponse = async (proxyRes: IncomingMessage, mode
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     proxyRes.on("data", (chunk: Buffer) => chunks.push(chunk));
-    proxyRes.on("error", reject); // Reject promise on connection error
+    proxyRes.on("error", reject);
 
     proxyRes.on("end", () => {
       try {
@@ -76,7 +76,6 @@ const accumulateAndParseBackendResponse = async (proxyRes: IncomingMessage, mode
         let remainingResponse = fullBackendResponse;
         let jsonObjectCount = 0;
 
-        // Attempt to parse the response as potentially concatenated JSON objects
         while (remainingResponse.length > 0) {
           let braceCount = 0;
           let endIndex = -1;
@@ -120,6 +119,8 @@ const accumulateAndParseBackendResponse = async (proxyRes: IncomingMessage, mode
             // Extract content, assuming OpenAI-like structure from backend
             if (parsedChunk.choices?.[0]?.message?.content) {
               accumulatedContent += parsedChunk.choices[0].message.content;
+            } else if (parsedChunk.message?.content) { // Handle Ollama non-streaming message structure
+               accumulatedContent += parsedChunk.message.content;
             }
 
             // Extract final stats from either OpenAI `usage` or Ollama `done: true` chunks
@@ -138,10 +139,14 @@ const accumulateAndParseBackendResponse = async (proxyRes: IncomingMessage, mode
               finalStats.model = finalStats.model || modelRequested;
             }
           } catch (e) {
-            console.warn("Could not parse JSON segment:", jsonString, e);
-            if (jsonObjectCount === 1) accumulatedContent = fullBackendResponse; // Use original if first parse failed
-            break; // Stop processing if a segment fails
+            console.warn(`\n[PROXY ACCUMULATE] Could not parse JSON segment: ${jsonString}`, e);
+            if (jsonObjectCount === 1) accumulatedContent = fullBackendResponse;
+            break;
           }
+        }
+
+        if (jsonObjectCount === 0 && fullBackendResponse.length > 0) {
+             accumulatedContent = fullBackendResponse; // Treat non-JSON as raw content
         }
 
         // Provide default stats if none were properly extracted but content exists
@@ -215,20 +220,31 @@ export const handleProxyResponse = async (
 
     // Handle Streaming Client Requests
     if (isStreamingRequest) {
-      const headers = originalPath === "/v1/chat/completions" ? {
-          'Content-Type': 'text/event-stream',
-          'Cache-Control': 'no-cache',
-          'Connection': 'keep-alive',
-          'Access-Control-Allow-Origin': '*'
-        } : {
-          'Content-Type': 'application/json',
-          'Transfer-Encoding': 'chunked',
-          'Connection': 'keep-alive',
-          'Access-Control-Allow-Origin': '*'
-        };
-      res.writeHead(200, headers);
+      // Log initial stream response info
+      console.group(`
+--- Outgoing Response (Streaming) ---`);
+      console.log(`  Status: ${backendStatusCode} ${proxyRes.statusMessage}`);
+      // Log response headers sent *to the client*
+      const clientHeaders = originalPath === "/v1/chat/completions" ? {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'Access-Control-Allow-Origin': '*'
+      } : {
+        'Content-Type': 'application/json',
+        'Transfer-Encoding': 'chunked',
+        'Connection': 'keep-alive',
+        'Access-Control-Allow-Origin': '*'
+      };
+      console.group("  Headers (to client):");
+      console.dir(clientHeaders, { depth: null });
+      console.groupEnd();
+      process.stdout.write("  Body: "); // Start body log line without newline
+
+      res.writeHead(backendStatusCode, clientHeaders); // Use clientHeaders here
 
       let chunkId = `chatcmpl-${randomUUID()}`;
+      let finalStatsChunk: Partial<OllamaResponse> | null = null; // Store potential final stats
 
       proxyRes.on("data", (chunk: Buffer) => {
         const rawChunk = chunk.toString('utf8').trim();
@@ -236,88 +252,224 @@ export const handleProxyResponse = async (
 
         try {
           const backendChunk = JSON.parse(rawChunk);
-          const contentDelta = backendChunk.choices?.[0]?.message?.content || '';
+          // Store stats if it's a final chunk (Ollama style)
+          if (backendChunk.done === true) {
+            finalStatsChunk = backendChunk;
+            return; // Don't process final chunk content/writing here
+          }
+
+          const contentDelta = backendChunk.choices?.[0]?.message?.content || backendChunk.message?.content || ''; // Handle both OpenAI and Ollama delta formats
 
           if (contentDelta) {
+            process.stdout.write(contentDelta); // Append content delta to the log line
+            // Format and write chunk to client
             if (originalPath === "/v1/chat/completions") {
               res.write(formatOpenAIStreamChunk(contentDelta, modelRequested, chunkId));
             } else if (originalPath === "/api/chat") {
-              // --- DEBUG LOGGING for /api/chat stream ---
-              // console.log("[PROXY DEBUG /api/chat stream] Received backend chunk:", JSON.stringify(backendChunk));
-              // --- END DEBUG LOGGING ---
               res.write(formatOllamaStreamChunk(contentDelta, modelRequested));
             }
           }
-          // Ignore chunks without content delta (e.g., final chunks with only stats)
+          // Ignore chunks without content delta (e.g., intermediate OpenAI chunks)
         } catch (error: any) {
-          // Log a warning but continue processing the stream if a chunk is malformed
-          console.warn(`[PROXY STREAM ${originalPath}] Skipping backend chunk due to JSON parsing error. Chunk: "${rawChunk}", Error: ${error.message}`);
+          console.warn(`\n[PROXY STREAM ${originalPath}] Skipping backend chunk due to JSON parsing error. Chunk: "${rawChunk}", Error: ${error.message}`);
         }
       });
 
       proxyRes.on("end", () => {
+        process.stdout.write("\n"); // Finish the log body line
         // Send appropriate final stream message to client
         if (originalPath === "/v1/chat/completions") {
           res.write(formatFinalOpenAIChunk());
         } else if (originalPath === "/api/chat") {
           const durationNs = process.hrtime.bigint() - requestStartTime;
-          // Final Ollama chunk can include stats, but we don't reliably get them from the stream
-          res.write(formatFinalOllamaChunk(modelRequested, undefined, durationNs));
+          res.write(formatFinalOllamaChunk(modelRequested, finalStatsChunk || undefined, durationNs));
         }
+        console.groupEnd(); // Close the main streaming response group
         res.end();
       });
 
       proxyRes.on("error", (error) => {
+        process.stdout.write("\n[STREAM ERROR]\n"); // Add newline on error
         console.error("[PROXY STREAM] Error during backend response stream:", error);
+        console.groupEnd(); // Ensure group is closed on error
         if (!res.writableEnded) res.end();
       });
 
        res.on('error', (err) => {
+         process.stdout.write("\n[CLIENT WRITE ERROR]\n"); // Add newline on error
          console.error('[PROXY STREAM] Error during client response write:', err);
+         console.groupEnd(); // Ensure group is closed on error
       });
 
-    // Handle Non-Streaming Client Requests
+    // Handle Non-Streaming Client Requests (with real-time body logging)
     } else {
-      const { content: accumulatedContent, stats: finalStats } = await accumulateAndParseBackendResponse(proxyRes, modelRequested);
-      const requestEndTime = process.hrtime.bigint();
-      const calculatedDurationNs = requestEndTime - requestStartTime;
+      // Log initial response info
+      console.group(`\n--- Outgoing Response ---`);
+      console.log(`  Status: ${backendStatusCode} ${proxyRes.statusMessage}`);
+      console.group("  Headers (from backend):");
+      console.dir(backendHeaders, { depth: null });
+      console.groupEnd();
+      process.stdout.write("  Body: "); // Start body log line
 
-      let finalResponse: OllamaResponse | OpenAICompletionResponse;
-      let responseBodyString: string;
+      let partialChunkBuffer = '';
+      const allChunks: Buffer[] = [];
 
-      if (originalPath === "/v1/chat/completions") {
-        // Use original prompt messages if available for token calculation
-        let promptMessages: { role: string; content: string | null }[] = [];
-        try {
-          promptMessages = JSON.parse(originalRequestBody).messages;
-        } catch (e) { /* Ignore parsing error, token count will be less accurate */ }
+      proxyRes.on("data", (chunk: Buffer) => {
+        allChunks.push(chunk);
+        partialChunkBuffer += chunk.toString('utf8');
 
-        finalResponse = createOpenAIResponse(
-          accumulatedContent,
-          modelRequested,
-          promptMessages, // Pass parsed prompt messages
-          finalStats
-        );
-        responseBodyString = JSON.stringify(finalResponse);
-      } else {
-        // Default to Ollama format for other non-streaming paths
-        finalResponse = createOllamaResponse(
-            accumulatedContent,
-            modelRequested,
-            finalStats,
-            calculatedDurationNs
-        );
-        responseBodyString = JSON.stringify(finalResponse);
-      }
+        // Process complete JSON objects found in the buffer
+        while (true) {
+            let braceCount = 0;
+            let endIndex = -1;
+            let startIndex = partialChunkBuffer.indexOf('{');
 
-      res.writeHead(200, {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-        'Content-Length': Buffer.byteLength(responseBodyString)
+            if (startIndex === -1) break; // No start brace found
+
+            // Find matching closing brace
+            for (let i = startIndex; i < partialChunkBuffer.length; i++) {
+                if (partialChunkBuffer[i] === '{') braceCount++;
+                else if (partialChunkBuffer[i] === '}') braceCount--;
+
+                if (braceCount === 0 && partialChunkBuffer[i] === '}') { // Ensure we land on the closing brace
+                    endIndex = i;
+                    break;
+                }
+            }
+
+            if (endIndex === -1) break; // Incomplete JSON object in buffer
+
+            const jsonString = partialChunkBuffer.substring(startIndex, endIndex + 1);
+
+            try {
+                const parsedChunk = JSON.parse(jsonString);
+                const contentDelta = parsedChunk.choices?.[0]?.message?.content || parsedChunk.message?.content || '';
+                if (contentDelta) {
+                    process.stdout.write(contentDelta); // Write delta to console
+                }
+            } catch (e) {
+                // Don't warn here, could be partial JSON. Accumulate function handles final parse errors.
+            }
+
+            // Remove processed part from buffer
+            partialChunkBuffer = partialChunkBuffer.substring(endIndex + 1);
+        }
       });
 
-      logResponse(res, finalResponse); // Log the structured response object
-      res.end(responseBodyString);
+      proxyRes.on("end", async () => {
+        process.stdout.write("\n"); // Finish the real-time body log line
+        // Add separator before final summary
+        console.log("  -------------------------------");
+        console.log("  Final Response Summary:");
+        // Don't close the initial group here, logResponse will handle its own grouping
+        // console.groupEnd(); // REMOVED - Let logResponse manage groups
+
+        try {
+          const fullBackendResponse = Buffer.concat(allChunks).toString('utf8').trim();
+          let accumulatedContent = '';
+          let finalStats: Partial<OllamaResponse> = {};
+          let remainingResponse = fullBackendResponse;
+          let jsonObjectCount = 0;
+
+          // Simplified parsing loop just for final content/stats
+          while (remainingResponse.length > 0) {
+              let braceCount = 0;
+              let endIndex = -1;
+              let startIndex = remainingResponse.indexOf('{');
+
+              if (startIndex === -1) break;
+
+              // Find matching closing brace
+              for (let i = startIndex; i < remainingResponse.length; i++) {
+                  if (remainingResponse[i] === '{') braceCount++;
+                  else if (remainingResponse[i] === '}') braceCount--;
+
+                  if (braceCount === 0 && remainingResponse[i] === '}') { // Ensure we land on the closing brace
+                      endIndex = i;
+                      break;
+                  }
+              }
+
+              if (endIndex === -1) break;
+
+              const jsonString = remainingResponse.substring(startIndex, endIndex + 1);
+              remainingResponse = remainingResponse.substring(endIndex + 1).trim();
+              jsonObjectCount++;
+              try {
+                  const parsedChunk = JSON.parse(jsonString);
+                  if (parsedChunk.choices?.[0]?.message?.content) {
+                      accumulatedContent += parsedChunk.choices[0].message.content;
+                  } else if (parsedChunk.message?.content) {
+                      accumulatedContent += parsedChunk.message.content;
+                  }
+                  // Extract final stats logic (copy from accumulate func)
+                  if (parsedChunk.usage) {
+                      finalStats = {
+                          ...finalStats,
+                          prompt_eval_count: parsedChunk.usage.prompt_tokens,
+                          eval_count: parsedChunk.usage.completion_tokens,
+                          done_reason: finalStats.done_reason || parsedChunk.choices?.[0]?.finish_reason || "stop",
+                          model: finalStats.model || parsedChunk.model || modelRequested,
+                          created_at: finalStats.created_at || (parsedChunk.created ? new Date(parsedChunk.created * 1000).toISOString() : undefined)
+                      };
+                  } else if (parsedChunk.done === true) {
+                      finalStats = { ...parsedChunk, ...finalStats };
+                      finalStats.model = finalStats.model || modelRequested;
+                  }
+              } catch (e) {
+                  if (jsonObjectCount === 1) accumulatedContent = fullBackendResponse;
+                  break;
+              }
+          }
+          if (jsonObjectCount === 0 && fullBackendResponse.length > 0) accumulatedContent = fullBackendResponse;
+          // Add default stats if needed (copy from accumulate func)
+          if (!finalStats.model && accumulatedContent.length > 0) {
+              console.warn("Final stats chunk not found or parsed correctly, using defaults.");
+              finalStats.model = modelRequested;
+              finalStats.done_reason = finalStats.done_reason || "stop";
+              finalStats.created_at = finalStats.created_at || new Date().toISOString();
+          }
+
+          // -- Original logic continues below --
+          const requestEndTime = process.hrtime.bigint();
+          const calculatedDurationNs = requestEndTime - requestStartTime;
+
+          let finalResponse: OllamaResponse | OpenAICompletionResponse;
+          let responseBodyString: string;
+
+          if (originalPath === "/v1/chat/completions") {
+            let promptMessages: { role: string; content: string | null }[] = [];
+            try { promptMessages = JSON.parse(originalRequestBody).messages; } catch (e) { /* ignore */ }
+            finalResponse = createOpenAIResponse(accumulatedContent, modelRequested, promptMessages, finalStats);
+            responseBodyString = JSON.stringify(finalResponse);
+          } else {
+            finalResponse = createOllamaResponse(accumulatedContent, modelRequested, finalStats, calculatedDurationNs);
+            responseBodyString = JSON.stringify(finalResponse);
+          }
+
+          // Write final headers and status code
+          res.writeHead(backendStatusCode, {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+            'Content-Length': Buffer.byteLength(responseBodyString)
+          });
+
+          // Log the final structured response body (without headers/status)
+          logResponse(res, finalResponse, false);
+          res.end(responseBodyString);
+
+        } catch (error) {
+             console.error("Error processing final non-streaming response:", error);
+             if (!res.writableEnded) sendErrorResponse(res, 500, "Proxy Response Processing Error");
+        }
+      });
+
+      proxyRes.on("error", (error) => {
+        process.stdout.write("\n[NON-STREAM ERROR]\n"); // Add newline on error
+        console.error("[PROXY NON-STREAM] Error during backend response handling:", error);
+        console.groupEnd(); // Ensure group is closed on error
+        if (!res.writableEnded) sendErrorResponse(res, 500, "Proxy Backend Error");
+      });
     }
   } catch (error) {
     console.error("Error in handleProxyResponse:", error);

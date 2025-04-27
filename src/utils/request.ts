@@ -43,12 +43,22 @@ export const logRequest = (req: IncomingMessage, url: URL, body?: string): void 
  * Log response details
  * @param res The ServerResponse object.
  * @param body Optional response body (string or object). If object, assumes JSON.
+ * @param logHeaderAndStatus Controls if the initial status/header block is logged.
  */
-export const logResponse = (res: ServerResponse, body?: string | object): void => {
-  console.group(`
---- Outgoing Response ---`);
-  console.log(`  Status: ${res.statusCode} ${res.statusMessage}`);
-  console.groupEnd();
+export const logResponse = (
+  res: ServerResponse,
+  body?: string | object,
+  logHeaderAndStatus: boolean = true // New parameter
+): void => {
+  let mainGroupStarted = false;
+  if (logHeaderAndStatus) {
+    console.group(`\n--- Outgoing Response ---`);
+    mainGroupStarted = true;
+    console.log(`  Status: ${res.statusCode} ${res.statusMessage}`);
+    console.group("  Headers:");
+    console.dir(res.getHeaders(), { depth: null }); // Use console.dir for headers
+    console.groupEnd();
+  }
 
   if (body) {
     console.group("  Body:");
@@ -67,8 +77,11 @@ export const logResponse = (res: ServerResponse, body?: string | object): void =
          console.log("(unknown format):", body);
     }
     console.groupEnd();
-  } else {
+  } else if (logHeaderAndStatus) { // Only log empty body if logging header
        console.log("  Body: (empty or not provided)");
   }
-  console.groupEnd(); // End main response group
+
+  if (mainGroupStarted) { // Conditionally close the main group
+    console.groupEnd();
+  }
 }; 

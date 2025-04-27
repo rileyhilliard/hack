@@ -12,6 +12,8 @@ const STARTUP_TIMEOUT = 15000; // Max time to wait for server start (ms)
 const POLL_INTERVAL = 500; // Interval to check if server is up (ms)
 
 let serverProcess: ChildProcess | null = null; // Use Node's ChildProcess type
+let stdoutData = '';
+let stderrData = '';
 
 // Helper to wait for the server to be ready
 async function waitForServer(url: string): Promise<void> {
@@ -45,24 +47,34 @@ describe('Ollama Compatible Endpoints', () => {
     }
 
     console.log('Starting proxy server for tests via start:prod...');
+    stdoutData = ''; // Clear buffers before starting
+    stderrData = '';
     try {
       // Start the server using the production-like start script
       serverProcess = execa('yarn', ['start:prod'], {
-          detached: false, // Detached might not be needed if we handle cleanup properly
-          stdio: 'pipe', // Capture output
-          // Pass env vars if needed, e.g., TARGET_API_KEY
+          detached: false,
+          stdio: 'pipe', // Ensure output is piped
           env: { ...process.env, TARGET_API_KEY: 'itdx3q3wpedgd38ikklejm' }
       });
 
-      // Log server output for debugging if necessary
-      serverProcess.stdout?.pipe(process.stdout);
-      serverProcess.stderr?.pipe(process.stderr);
+      // Capture stdout
+      serverProcess.stdout?.on('data', (data) => {
+        stdoutData += data.toString();
+      });
+
+      // Capture stderr
+      serverProcess.stderr?.on('data', (data) => {
+        stderrData += data.toString();
+        // Optional: Log stderr immediately for debugging startup issues
+        // console.error('[Server STDERR]:', data.toString());
+      });
 
       console.log(`Waiting for server to be ready at ${PROXY_URL}...`);
       await waitForServer(PROXY_URL); // Wait for the health check endpoint
 
     } catch (error) {
       console.error('Failed to start server:', error);
+      console.error('Captured stderr during failed startup:', stderrData);
       // Ensure process is killed if startup fails
       if (serverProcess && !serverProcess.killed) {
         serverProcess.kill('SIGTERM');
@@ -114,10 +126,12 @@ describe('Ollama Compatible Endpoints', () => {
     expect(model.details).toHaveProperty('family'); 
   });
 
-  it('POST /api/chat (non-streaming) should return Ollama response format', async () => {
+  it('POST /api/chat (non-streaming) should return Ollama response format and log correctly', async () => {
+    stdoutData = ''; // Clear before test
+    stderrData = '';
     const requestBody = {
-      model: 'webai-llm', 
-      messages: [{ role: 'user', content: 'Hello?' }],
+      model: 'webai-llm',
+      messages: [{ role: 'user', content: 'Hello?' }], // Unique content
       stream: false,
     };
 
@@ -163,12 +177,38 @@ describe('Ollama Compatible Endpoints', () => {
     if (data.hasOwnProperty('eval_duration')) {
         expect(typeof data.eval_duration).toBe('number');
     }
-  }, 20000); // Increase timeout for non-streaming test
 
-  it('POST /api/chat (streaming) should return newline-delimited JSON chunks', async () => {
-     const requestBody = {
+    await setTimeout(200); // Allow logs to flush
+
+    // --- Logging Assertions ---
+    // console.log("--- Captured STDOUT for Non-Streaming Test ---\n", stdoutData);
+    // console.log("--- Captured STDERR for Non-Streaming Test ---\n", stderrData);
+
+    // Request Logs
+    expect(stdoutData).toMatch(/=== Incoming Request ===/);
+    expect(stdoutData).toMatch(/POST \/api\/chat/);
+    expect(stdoutData).toMatch(/Headers:/);
+    expect(stdoutData).toMatch(/Body:/);
+    expect(stdoutData).toMatch(/Hello\?/); // Check for request body content in log
+
+    // Response Logs
+    expect(stdoutData).toMatch(/--- Outgoing Response ---/);
+    expect(stdoutData).toMatch(/Status: 200/);
+    expect(stdoutData).toMatch(/Headers \(from backend\):/);
+    expect(stdoutData).toMatch(/Body: .+$/m); // Real-time body line with some content
+    expect(stdoutData).toMatch(/-------------------------------/);
+    expect(stdoutData).toMatch(/Final Response Summary:/);
+    expect(stdoutData).toMatch(/message: { role: 'assistant', content: /); // Final structured body
+    expect(stdoutData).toContain(data.message.content.substring(0, 20)); // Check beginning of actual response content in final log
+
+  }, 20000);
+
+  it('POST /api/chat (streaming) should return newline-delimited JSON chunks and log correctly', async () => {
+    stdoutData = ''; // Clear before test
+    stderrData = '';
+    const requestBody = {
       model: 'webai-llm',
-      messages: [{ role: 'user', content: 'Hello?' }],
+      messages: [{ role: 'user', content: 'Hello?' }], // Unique content
       stream: true,
     };
 
@@ -241,7 +281,35 @@ describe('Ollama Compatible Endpoints', () => {
         // Decide if this should be an error or handled
     }
 
-  }, 20000); // Increase timeout for streaming test
+    await setTimeout(200); // Allow logs to flush
+
+    // --- Logging Assertions ---
+    // console.log("--- Captured STDOUT for Streaming Test ---\n", stdoutData);
+    // console.log("--- Captured STDERR for Streaming Test ---\n", stderrData);
+
+    // Request Logs
+    expect(stdoutData).toMatch(/=== Incoming Request ===/);
+    expect(stdoutData).toMatch(/POST \/api\/chat/);
+    expect(stdoutData).toMatch(/Body:/);
+    expect(stdoutData).toMatch(/Hello\?/); // Check request body
+
+    // Response Logs
+    expect(stdoutData).toMatch(/--- Outgoing Response \(Streaming\) ---/);
+    expect(stdoutData).toMatch(/Status: 200/);
+    expect(stdoutData).toMatch(/Headers \(to client\):/);
+    // Check the real-time body log contains the streamed content
+    const bodyLogMatch = stdoutData.match(/Body: (.*)/); // Find the line starting with Body:
+    expect(bodyLogMatch).not.toBeNull();
+    // Tolerate minor whitespace differences
+    const loggedBodyContent = bodyLogMatch ? bodyLogMatch[1].trim() : '';
+    expect(loggedBodyContent).toContain(fullContent.trim().substring(0, 10)); // Check start of content
+    expect(loggedBodyContent).toContain(fullContent.trim().slice(-10)); // Check end of content
+
+    // Ensure NO final summary log for streaming
+    expect(stdoutData).not.toMatch(/-------------------------------/);
+    expect(stdoutData).not.toMatch(/Final Response Summary:/);
+
+  }, 20000);
 
   it('GET / should return health check message', async () => {
     const response = await fetch(`${PROXY_URL}/`);

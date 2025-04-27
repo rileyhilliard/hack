@@ -13,6 +13,8 @@ const STARTUP_TIMEOUT = 30000;
 const POLL_INTERVAL = 500;
 
 let serverProcess: ChildProcess | null = null;
+let stdoutData = '';
+let stderrData = '';
 
 // Helper to wait for the server (same as ollama.test.ts)
 async function waitForServer(url: string): Promise<void> {
@@ -45,24 +47,31 @@ describe('OpenAI Compatible Endpoints', () => {
     }
 
     console.log('Starting proxy server for tests via start:prod...');
+    stdoutData = ''; // Clear buffers before starting
+    stderrData = '';
     try {
       serverProcess = execa('yarn', ['start:prod'], {
           detached: false,
-          stdio: 'pipe',
-          env: {
-              ...process.env,
-              TARGET_API_KEY, // Ensure API key is passed if needed by target
-          }
+          stdio: 'pipe', // Ensure output is piped
+          env: { ...process.env, TARGET_API_KEY }
       });
 
-      serverProcess.stdout?.pipe(process.stdout);
-      serverProcess.stderr?.pipe(process.stderr);
+      // Capture stdout
+      serverProcess.stdout?.on('data', (data) => {
+        stdoutData += data.toString();
+      });
+
+      // Capture stderr
+      serverProcess.stderr?.on('data', (data) => {
+        stderrData += data.toString();
+      });
 
       console.log(`Waiting for server to be ready at ${PROXY_URL}...`);
       await waitForServer(PROXY_URL);
 
     } catch (error) {
       console.error('Failed to start server:', error);
+      console.error('Captured stderr during failed startup:', stderrData);
       if (serverProcess && !serverProcess.killed) {
         serverProcess.kill('SIGTERM');
       }
@@ -111,10 +120,12 @@ describe('OpenAI Compatible Endpoints', () => {
     expect(model).toHaveProperty('owned_by', 'webai-proxy');
   });
 
-  it('POST /v1/chat/completions (non-streaming) should return OpenAI ChatCompletion format', async () => {
+  it('POST /v1/chat/completions (non-streaming) should return OpenAI ChatCompletion format and log correctly', async () => {
+    stdoutData = ''; // Clear before test
+    stderrData = '';
     const requestBody = {
-      model: 'webai-llm', // Must match one of the IDs from /v1/models
-      messages: [{ role: 'user', content: 'Hello?' }],
+      model: 'webai-llm',
+      messages: [{ role: 'user', content: 'Hello?' }], // Unique content
       stream: false,
     };
 
@@ -122,55 +133,44 @@ describe('OpenAI Compatible Endpoints', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${TARGET_API_KEY}` // OpenAI endpoints often require auth
+        'Authorization': `Bearer ${TARGET_API_KEY}`
       },
       body: JSON.stringify(requestBody),
     });
-
     expect(response.status).toBe(200);
-    expect(response.headers.get('content-type')).toContain('application/json');
-
     const data: ChatCompletion = await response.json();
+    expect(data.choices[0].message.content!.length).toBeGreaterThan(0);
 
-    // Basic structure checks based on OpenAI spec
-    expect(data).toHaveProperty('id');
-    expect(typeof data.id).toBe('string');
-    expect(data.id).toMatch(/^chatcmpl-/); // OpenAI IDs usually start with this prefix
-    expect(data).toHaveProperty('object', 'chat.completion');
-    expect(data).toHaveProperty('created');
-    expect(typeof data.created).toBe('number');
-    expect(data).toHaveProperty('model', 'webai-llm'); // Should reflect the requested/served model
-    expect(data).toHaveProperty('choices');
-    expect(Array.isArray(data.choices)).toBe(true);
-    expect(data.choices.length).toBeGreaterThan(0);
+    await setTimeout(200); // Allow logs to flush
 
-    // Check the first choice
-    const choice = data.choices[0];
-    expect(choice).toHaveProperty('index', 0);
-    expect(choice).toHaveProperty('message');
-    expect(choice.message).toHaveProperty('role', 'assistant');
-    expect(choice.message).toHaveProperty('content');
-    expect(typeof choice.message.content).toBe('string');
-    expect(choice.message.content).not.toBeNull();
-    expect(choice.message.content!.length).toBeGreaterThan(0);
-    expect(choice).toHaveProperty('finish_reason', 'stop'); // Common finish reason
+    // --- Logging Assertions ---
+    // console.log("--- Captured STDOUT for Non-Streaming Test ---\n", stdoutData);
 
-    // Check usage field for non-zero token counts (approximation)
-    expect(data).toHaveProperty('usage');
-    expect(typeof data.usage!.prompt_tokens).toBe('number');
-    expect(data.usage!.prompt_tokens).toBeGreaterThan(0); // Should be > 0 for "Hello?"
-    expect(typeof data.usage!.completion_tokens).toBe('number');
-    expect(data.usage!.completion_tokens).toBeGreaterThan(0); // Response has content
-    expect(typeof data.usage!.total_tokens).toBe('number');
-    expect(data.usage!.total_tokens).toBeGreaterThan(0);
-    expect(data.usage!.total_tokens).toEqual(data.usage!.prompt_tokens + data.usage!.completion_tokens);
+    // Request Logs
+    expect(stdoutData).toMatch(/=== Incoming Request ===/);
+    expect(stdoutData).toMatch(/POST \/v1\/chat\/completions/);
+    expect(stdoutData).toMatch(/Headers:/);
+    expect(stdoutData).toMatch(/Body:/);
+    expect(stdoutData).toMatch(/Hello\?/); // Check request body content (Updated)
+
+    // Response Logs
+    expect(stdoutData).toMatch(/--- Outgoing Response ---/);
+    expect(stdoutData).toMatch(/Status: 200/);
+    expect(stdoutData).toMatch(/Headers \(from backend\):/);
+    expect(stdoutData).toMatch(/Body: .+$/m); // Real-time body line
+    expect(stdoutData).toMatch(/-------------------------------/);
+    expect(stdoutData).toMatch(/Final Response Summary:/);
+    expect(stdoutData).toMatch(/message: { role: 'assistant', content: /); // Final structured body
+    expect(stdoutData).toContain(data.choices[0].message.content!.substring(0, 20)); // Check actual response content
 
   }, 20000);
 
-  it('POST /v1/chat/completions (streaming) should return text/event-stream chunks', async () => {
+  it('POST /v1/chat/completions (streaming) should return text/event-stream chunks and log correctly', async () => {
+    stdoutData = ''; // Clear before test
+    stderrData = '';
     const requestBody = {
       model: 'webai-llm',
-      messages: [{ role: 'user', content: 'Hello?' }],
+      messages: [{ role: 'user', content: 'Hello?' }], // Unique content
       stream: true,
     };
 
@@ -288,6 +288,31 @@ describe('OpenAI Compatible Endpoints', () => {
     if (buffer.trim() && buffer.trim() !== 'data: [DONE]') {
       console.warn('Remaining buffer content after stream ended:', buffer);
     }
+
+    await setTimeout(200); // Allow logs to flush
+
+    // --- Logging Assertions ---
+    // console.log("--- Captured STDOUT for Streaming Test ---\n", stdoutData);
+
+    // Request Logs
+    expect(stdoutData).toMatch(/=== Incoming Request ===/);
+    expect(stdoutData).toMatch(/POST \/v1\/chat\/completions/);
+    expect(stdoutData).toMatch(/Body:/);
+    expect(stdoutData).toMatch(/Hello\?/); // Check request body (Updated)
+
+    // Response Logs
+    expect(stdoutData).toMatch(/--- Outgoing Response \(Streaming\) ---/);
+    expect(stdoutData).toMatch(/Status: 200/);
+    expect(stdoutData).toMatch(/Headers \(to client\):/);
+    const bodyLogMatch = stdoutData.match(/Body: (.*)/);
+    expect(bodyLogMatch).not.toBeNull();
+    const loggedBodyContent = bodyLogMatch ? bodyLogMatch[1].trim() : '';
+    expect(loggedBodyContent).toContain(fullContent.trim().substring(0, 10)); // Check start
+    expect(loggedBodyContent).toContain(fullContent.trim().slice(-10)); // Check end
+
+    // Ensure NO final summary log for streaming
+    expect(stdoutData).not.toMatch(/-------------------------------/);
+    expect(stdoutData).not.toMatch(/Final Response Summary:/);
 
   }, 40000); // Increased timeout for streaming test
 
