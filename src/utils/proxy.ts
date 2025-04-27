@@ -21,13 +21,26 @@ export const createProxyConfig = (
     'Connection': 'keep-alive'
   };
 
+  // Determine the API key to send to the backend
+  let backendApiKey: string | undefined = undefined;
+
   // Prioritize incoming Authorization header
   if (req.headers.authorization) {
-    headers['Authorization'] = req.headers.authorization;
+    // Extract token, assuming format "Bearer <token>"
+    const authHeader = req.headers.authorization;
+    if (authHeader.toLowerCase().startsWith('bearer ')) {
+        backendApiKey = authHeader.substring(7).trim();
+    }
   }
+
   // Otherwise, use the targetApiKey from config if available
-  else if (config.targetApiKey) {
-    headers['x-api-key'] = config.targetApiKey;
+  if (!backendApiKey && config.targetApiKey) {
+    backendApiKey = config.targetApiKey;
+  }
+
+  // Always send the determined key as X-API-Key to the backend
+  if (backendApiKey) {
+      headers['x-api-key'] = backendApiKey;
   }
 
   return {

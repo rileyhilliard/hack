@@ -49,7 +49,10 @@ describe('OpenAI Compatible Endpoints', () => {
       serverProcess = execa('yarn', ['start:prod'], {
           detached: false,
           stdio: 'pipe',
-          env: { ...process.env, TARGET_API_KEY } // Ensure API key is passed if needed by target
+          env: {
+              ...process.env,
+              TARGET_API_KEY, // Ensure API key is passed if needed by target
+          }
       });
 
       serverProcess.stdout?.pipe(process.stdout);
@@ -312,6 +315,77 @@ describe('OpenAI Compatible Endpoints', () => {
     const errorData = await response.json();
     expect(errorData).toHaveProperty('error');
     expect(errorData.error).toContain('Invalid JSON');
+  });
+
+  // --- Authentication Scenario Tests ---
+
+  it('POST /v1/chat/completions with NO Authorization header should SUCCEED (using TARGET_API_KEY from env)', async () => {
+    const requestBody = {
+      model: 'webai-llm',
+      messages: [{ role: 'user', content: 'Hello?' }],
+      stream: false,
+    };
+
+    const response = await fetch(`${PROXY_URL}/v1/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        // No Authorization header
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    // Expect success because TARGET_API_KEY in env should be used as fallback
+    expect(response.status).toBe(200);
+    const data = await response.json();
+    expect(data).toHaveProperty('object', 'chat.completion');
+  }, 10000); // Add timeout
+
+  it('POST /v1/chat/completions with INVALID Authorization header should SUCCEED (using TARGET_API_KEY from env)', async () => {
+    const requestBody = {
+      model: 'webai-llm',
+      messages: [{ role: 'user', content: 'Hello?' }],
+      stream: false,
+    };
+
+    const response = await fetch(`${PROXY_URL}/v1/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Basic dXNlcjpwYXNz' // Invalid format (should be Bearer)
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    // Expect success because the invalid header should be ignored, falling back to TARGET_API_KEY
+    expect(response.status).toBe(200);
+    const data = await response.json();
+    expect(data).toHaveProperty('object', 'chat.completion');
+  }, 10000); // Add timeout
+
+  it('POST /v1/chat/completions with INCORRECT Bearer token should FAIL (401 Unauthorized)', async () => {
+    const requestBody = {
+      model: 'webai-llm',
+      messages: [{ role: 'user', content: 'Hello?' }],
+      stream: false,
+    };
+
+    const response = await fetch(`${PROXY_URL}/v1/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer incorrect-token-value' // Correct format, wrong key
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    // Expect failure because the proxy should forward the incorrect token, and the backend should reject it.
+    expect(response.status).toBe(401);
+    // Check response text instead of trying to parse JSON for error messages
+    const errorText = await response.text();
+    expect(errorText).toBeDefined();
+    // Optionally, check if the text contains expected keywords like "Unauthorized" or "Invalid"
+    // expect(errorText.toLowerCase()).toContain('unauthorized');
   });
 
   // Add more tests here (e.g., invalid auth, multiple messages)

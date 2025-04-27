@@ -117,7 +117,7 @@ describe('Ollama Compatible Endpoints', () => {
   it('POST /api/chat (non-streaming) should return Ollama response format', async () => {
     const requestBody = {
       model: 'webai-llm', 
-      messages: [{ role: 'user', content: 'Test prompt' }],
+      messages: [{ role: 'user', content: 'Hello?' }],
       stream: false,
     };
 
@@ -168,7 +168,7 @@ describe('Ollama Compatible Endpoints', () => {
   it('POST /api/chat (streaming) should return newline-delimited JSON chunks', async () => {
      const requestBody = {
       model: 'webai-llm',
-      messages: [{ role: 'user', content: 'Test streaming prompt' }],
+      messages: [{ role: 'user', content: 'Hello?' }],
       stream: true,
     };
 
