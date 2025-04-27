@@ -128,13 +128,19 @@ export const handleRequest = async (
                 // For other paths, proxy the original body
                 proxyRequestBody = originalRequestBody;
             }
-        } catch (parseError) {
-            console.error("Error parsing request body:", parseError);
-            return sendErrorResponse(res, 400, "Invalid JSON request body");
+        } catch (err: any) {
+            console.error("Invalid JSON in request body:", err);
+            return sendErrorResponse(
+                res,
+                400,
+                "Invalid JSON in Request Body",
+                err instanceof Error ? err.message : "Unknown parsing error"
+            );
         }
     } else if (req.method === 'POST' || req.method === 'PUT') {
         // Handle POST/PUT requests that require a body but didn't provide one
-        return sendErrorResponse(res, 400, "Request body required but missing");
+        console.warn("Request requires body but none provided for:", url.pathname);
+        return sendErrorResponse(res, 400, "Missing Request Body", "This endpoint requires a JSON request body, but none was provided.");
     }
 
     // Create config and execute proxy request

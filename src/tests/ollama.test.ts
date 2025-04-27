@@ -270,7 +270,7 @@ describe('Ollama Compatible Endpoints', () => {
     expect(response.status).toBe(400);
     expect(response.headers.get('content-type')).toContain('application/json');
     const errorData = await response.json();
-    expect(errorData).toHaveProperty('error', 'Invalid JSON request body'); // Check exact message
+    expect(errorData).toHaveProperty('error', 'Invalid JSON in Request Body'); // Updated expectation
   });
 
   // --- Authentication Scenario Tests --- TODO: Add if TARGET_API_KEY is implemented for Ollama paths

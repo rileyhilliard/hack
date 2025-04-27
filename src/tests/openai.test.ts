@@ -313,7 +313,7 @@ describe('OpenAI Compatible Endpoints', () => {
     expect(response.status).toBe(400);
     expect(response.headers.get('content-type')).toContain('application/json');
     const errorData = await response.json();
-    expect(errorData).toHaveProperty('error', 'Invalid JSON request body');
+    expect(errorData).toHaveProperty('error', 'Invalid JSON in Request Body');
   });
 
   // --- Authentication Scenario Tests ---

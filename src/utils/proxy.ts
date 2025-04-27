@@ -248,8 +248,9 @@ export const handleProxyResponse = async (
             }
           }
           // Ignore chunks without content delta (e.g., final chunks with only stats)
-        } catch (error) {
-          console.error("[PROXY STREAM] Error parsing backend stream chunk JSON:", rawChunk, error);
+        } catch (error: any) {
+          // Log a warning but continue processing the stream if a chunk is malformed
+          console.warn(`[PROXY STREAM ${originalPath}] Skipping backend chunk due to JSON parsing error. Chunk: "${rawChunk}", Error: ${error.message}`);
         }
       });
 
