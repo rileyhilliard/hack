@@ -1,4 +1,4 @@
-import { IncomingMessage } from 'node:http';
+import { IncomingMessage, ServerResponse } from 'node:http';
 import { URL } from 'node:url';
 
 /**
@@ -16,16 +16,59 @@ export const collectRequestBody = async (req: IncomingMessage): Promise<string> 
  * Log request details
  */
 export const logRequest = (req: IncomingMessage, url: URL, body?: string): void => {
-  console.log("\n=== Incoming Request ===");
+  console.group(`
+=== Incoming Request ===`);
   console.log(`  ${req.method} ${url.pathname}${url.search}`);
-  console.log("  Headers:", req.headers);
+  console.log(`  From: ${req.socket.remoteAddress}`);
+  console.group("  Headers:");
+  console.log(req.headers);
+  console.groupEnd();
 
   if (body) {
+    console.group("  Body:");
     try {
-      console.log("  Body:", JSON.parse(body));
+      // Attempt to parse and log the object directly
+      console.log(JSON.parse(body)); // Log the parsed object
     } catch {
-      console.log("  Body (raw):", body);
+      console.log("(raw):", body); // Log raw body if not JSON
     }
+    console.groupEnd();
+  } else {
+    console.log("  Body: (empty)");
   }
-  console.log("======================");
+  console.groupEnd(); // End main request group
+};
+
+/**
+ * Log response details
+ * @param res The ServerResponse object.
+ * @param body Optional response body (string or object). If object, assumes JSON.
+ */
+export const logResponse = (res: ServerResponse, body?: string | object): void => {
+  console.group(`
+--- Outgoing Response ---`);
+  console.log(`  Status: ${res.statusCode} ${res.statusMessage}`);
+  console.groupEnd();
+
+  if (body) {
+    console.group("  Body:");
+    if (typeof body === 'object') {
+      // If body is already an object, log it directly using console.dir for full depth
+      console.dir(body, { depth: null }); // Use console.dir with infinite depth
+    } else if (typeof body === 'string') {
+      try {
+        // Attempt to parse and log the object directly using console.dir
+        console.dir(JSON.parse(body), { depth: null }); // Use console.dir with infinite depth
+      } catch {
+        // Log raw string body if not JSON
+        console.log("(raw):", body);
+      }
+    } else {
+         console.log("(unknown format):", body);
+    }
+    console.groupEnd();
+  } else {
+       console.log("  Body: (empty or not provided)");
+  }
+  console.groupEnd(); // End main response group
 }; 

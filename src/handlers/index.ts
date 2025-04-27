@@ -1,6 +1,6 @@
 import { IncomingMessage, ServerResponse } from 'http';
 import { URL } from 'url';
-import { collectRequestBody, logRequest } from '../utils/request';
+import { collectRequestBody, logRequest, logResponse } from '../utils/request';
 import { createProxyConfig, setupProxyRequest } from '../utils/proxy';
 import { sendErrorResponse } from '../utils/response';
 import { Config } from '../types';
@@ -9,7 +9,9 @@ import { Config } from '../types';
 export const directResponseHandlers = {
   handleRootPath: (res: ServerResponse): void => {
     res.writeHead(200, { "Content-Type": "text/plain" });
-    res.end("Ollama is running");
+    const body = "Ollama is running";
+    logResponse(res, body); // Log before ending
+    res.end(body);
     console.log("Health check request, responding OK");
   },
 
@@ -21,25 +23,25 @@ export const directResponseHandlers = {
       "Access-Control-Allow-Headers": "content-type",
     });
     // Respond with Ollama-compatible model list
-    res.end(
-      JSON.stringify({
-        models: [
-          {
-            name: "webai-llm", // Use the desired model ID
-            modified_at: new Date().toISOString(),
-            size: 0,
-            digest: "webai-proxy", // Simplified digest
-            details: {
-              format: "gguf",
-              family: "webai",
-              families: null, // Can be null
-              parameter_size: "N/A",
-              quantization_level: "N/A"
-            }
+    const body = {
+      models: [
+        {
+          name: "webai-llm", // Use the desired model ID
+          modified_at: new Date().toISOString(),
+          size: 0,
+          digest: "webai-proxy", // Simplified digest
+          details: {
+            format: "gguf",
+            family: "webai",
+            families: null, // Can be null
+            parameter_size: "N/A",
+            quantization_level: "N/A"
           }
-        ]
-      })
-    );
+        }
+      ]
+    };
+    logResponse(res, body); // Log before ending
+    res.end(JSON.stringify(body));
   },
 
   handleOpenAIModels: (res: ServerResponse): void => {
@@ -50,19 +52,19 @@ export const directResponseHandlers = {
       "Access-Control-Allow-Headers": "authorization, content-type",
     });
     // Respond with OpenAI-compatible model list
-    res.end(
-      JSON.stringify({
-        object: "list",
-        data: [
-          {
-            id: "webai-llm", // Model ID clients will use
-            object: "model",
-            created: Math.floor(Date.now() / 1000),
-            owned_by: "webai-proxy",
-          },
-        ],
-      })
-    );
+    const body = {
+      object: "list",
+      data: [
+        {
+          id: "webai-llm", // Model ID clients will use
+          object: "model",
+          created: Math.floor(Date.now() / 1000),
+          owned_by: "webai-proxy",
+        },
+      ],
+    };
+    logResponse(res, body); // Log before ending
+    res.end(JSON.stringify(body));
   },
 
   handleOptions: (res: ServerResponse): void => {
@@ -72,6 +74,7 @@ export const directResponseHandlers = {
         "Access-Control-Allow-Headers": "authorization, content-type", // Allow relevant headers
         "Access-Control-Max-Age": 86400, // Cache preflight for 1 day
     });
+    logResponse(res); // Log before ending (no body - body parameter is optional)
     res.end();
   }
 };

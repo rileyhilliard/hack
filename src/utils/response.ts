@@ -1,6 +1,7 @@
 import { ServerResponse } from 'node:http';
 import { OllamaResponse, OpenAICompletionChunk, OpenAICompletionResponse } from '../types/index.js';
 import { randomUUID } from 'crypto'; // For generating unique IDs
+import { logResponse } from './request'; // Added logResponse
 
 /**
  * Create an Ollama-compatible response (non-streaming)
@@ -190,5 +191,7 @@ export const sendErrorResponse = (
   const errorResponse = details
     ? { error: message, details }
     : { error: message };
+
+  logResponse(res, errorResponse); // Log before ending
   res.end(JSON.stringify(errorResponse));
 }; 

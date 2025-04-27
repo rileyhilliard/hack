@@ -1,8 +1,9 @@
 import { randomUUID } from 'crypto';
 import http, { IncomingMessage, ServerResponse, request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
-import { Config, OllamaResponse, WebAIBody } from '../types/index.js';
+import { Config, OllamaResponse, OpenAICompletionResponse, WebAIBody } from '../types/index.js';
 import { sendErrorResponse, createOllamaResponse, createOpenAIResponse, formatOllamaStreamChunk, formatOpenAIStreamChunk, formatFinalOpenAIChunk, formatFinalOllamaChunk } from './response.js';
+import { logResponse } from './request';
 
 /**
  * Create proxy request configuration
@@ -277,41 +278,51 @@ export const handleProxyResponse = async (
 
     // Handle Non-Streaming Client Requests
     } else {
-      const { content: responseContent, stats: responseStats } = await accumulateAndParseBackendResponse(proxyRes, modelRequested);
-      let finalResponse;
-      const modelToUse = modelRequested;
-      const durationNs = process.hrtime.bigint() - requestStartTime;
+      const { content: accumulatedContent, stats: finalStats } = await accumulateAndParseBackendResponse(proxyRes, modelRequested);
+      const requestEndTime = process.hrtime.bigint();
+      const calculatedDurationNs = requestEndTime - requestStartTime;
+
+      let finalResponse: OllamaResponse | OpenAICompletionResponse;
+      let responseBodyString: string;
 
       if (originalPath === "/v1/chat/completions") {
-        let promptMessages: any[] = [];
+        // Use original prompt messages if available for token calculation
+        let promptMessages: { role: string; content: string | null }[] = [];
         try {
-            const originalBodyParsed = JSON.parse(originalRequestBody);
-            promptMessages = originalBodyParsed.messages || [];
-        } catch (e) {
-            console.error("Could not parse original request body for token counting:", e);
-        }
-        finalResponse = createOpenAIResponse(responseContent, modelToUse, promptMessages, responseStats);
-      } else if (originalPath === "/api/chat") {
-        finalResponse = createOllamaResponse(responseContent, modelToUse, responseStats, durationNs);
+          promptMessages = JSON.parse(originalRequestBody).messages;
+        } catch (e) { /* Ignore parsing error, token count will be less accurate */ }
+
+        finalResponse = createOpenAIResponse(
+          accumulatedContent,
+          modelRequested,
+          promptMessages, // Pass parsed prompt messages
+          finalStats
+        );
+        responseBodyString = JSON.stringify(finalResponse);
       } else {
-        // Fallback for unknown paths: just return raw content + stats
-        finalResponse = { content: responseContent, stats: responseStats };
+        // Default to Ollama format for other non-streaming paths
+        finalResponse = createOllamaResponse(
+            accumulatedContent,
+            modelRequested,
+            finalStats,
+            calculatedDurationNs
+        );
+        responseBodyString = JSON.stringify(finalResponse);
       }
 
-      const responseBody = JSON.stringify(finalResponse);
       res.writeHead(200, {
         'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(responseBody),
-        'Access-Control-Allow-Origin': '*'
+        'Access-Control-Allow-Origin': '*',
+        'Content-Length': Buffer.byteLength(responseBodyString)
       });
-      res.end(responseBody);
+
+      logResponse(res, finalResponse); // Log the structured response object
+      res.end(responseBodyString);
     }
   } catch (error) {
-    console.error("handleProxyResponse Error:", error);
-    if (!res.headersSent) {
-        sendErrorResponse(res, 500, "Internal Server Error handling proxy response");
-    } else if (!res.writableEnded) {
-        res.end();
+    console.error("Error in handleProxyResponse:", error);
+    if (!res.writableEnded) {
+      sendErrorResponse(res, 500, "Proxy Response Handling Error");
     }
   }
 };
