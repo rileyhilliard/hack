@@ -156,7 +156,8 @@ export const handleRequest = async (
     console.error("handleRequest Error:", error);
     // Ensure response isn't already sent/ended before sending error
     if (!res.writableEnded) {
-        sendErrorResponse(res, 500, "Internal Server Error");
+        // Improve generic 500 message
+        sendErrorResponse(res, 500, "Proxy Internal Error", "The proxy encountered an unexpected error while processing your request.");
     }
   }
 };

@@ -332,7 +332,10 @@ export const setupProxyRequest = (
   // Determine if target is HTTP or HTTPS
   const requestFn = proxyConfig.port === 443 || config.targetPort === 443 ? httpsRequest : httpRequest; // Use config.targetPort for protocol check
 
-  const proxyReq = requestFn(proxyConfig, (proxyRes) => {
+  // Add configured timeout to the proxy request options
+  const finalProxyConfig = { ...proxyConfig, timeout: config.targetTimeoutMs };
+
+  const proxyReq = requestFn(finalProxyConfig, (proxyRes) => {
     handleProxyResponse(proxyRes, res, isStreamingRequest, originalPath, modelRequested, requestStartTime, originalRequestBody);
   });
 
@@ -349,10 +352,11 @@ export const setupProxyRequest = (
     sendErrorResponse(res, 502, "Proxy Error", error.message);
   });
 
-  proxyReq.setTimeout(proxyConfig.timeout || 30000, () => {
-    console.error("Proxy Request Timeout");
-    sendErrorResponse(res, 504, "Gateway Timeout");
-    proxyReq.destroy();
+  // Use the configured timeout for the setTimeout function as well
+  proxyReq.setTimeout(finalProxyConfig.timeout || 120000, () => {
+    console.error(`Proxy Request Timeout waiting for backend (${finalProxyConfig.timeout}ms)`);
+    sendErrorResponse(res, 504, "Backend server response timed out.");
+    proxyReq.destroy(); // Destroy the request to free up resources
   });
 
   if (typeof proxyRequestBody === 'string') {

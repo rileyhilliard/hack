@@ -39,6 +39,7 @@ Then, edit `.env` to set your desired configuration:
 *   `PROXY_DOMAIN`: Proxy hostname (Default: `localhost`)
 *   `PROXY_PORT`: Proxy port (Default: `8080`)
 *   `TARGET_API_KEY`: API key of the WebAI LLM server (sent as `X-API-Key` header).
+*   `TARGET_TIMEOUT_MS`: Timeout in milliseconds for waiting on the backend (Default: `120000`, i.e., 2 minutes).
 
 ## Running the Proxy
 

@@ -308,13 +308,12 @@ describe('OpenAI Compatible Endpoints', () => {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${TARGET_API_KEY}`
       },
-      body: '{ "model": "webai-llm", "messages": [{"role": "user", "content": "bad json"] }',
+      body: '{ "model": "webai-llm", "messages": [{\"role\": \"user\", \"content\": \"bad json\"] }',
     });
     expect(response.status).toBe(400);
     expect(response.headers.get('content-type')).toContain('application/json');
     const errorData = await response.json();
-    expect(errorData).toHaveProperty('error');
-    expect(errorData.error).toContain('Invalid JSON');
+    expect(errorData).toHaveProperty('error', 'Invalid JSON request body');
   });
 
   // --- Authentication Scenario Tests ---
@@ -383,12 +382,97 @@ describe('OpenAI Compatible Endpoints', () => {
     expect(response.status).toBe(401);
     expect(response.headers.get('content-type')).toContain('application/json');
     const errorData = await response.json();
+    // Check the original error message format
     expect(errorData).toHaveProperty('error');
     expect(errorData.error).toContain('Authentication error: Unauthorized access to the target server.');
-    expect(errorData.error).toContain('Setting the TARGET_API_KEY environment variable');
-    expect(errorData.error).toContain('Sending an \'Authorization: Bearer <your-token>\' header');
+    expect(errorData.error).toContain("Setting the TARGET_API_KEY environment variable");
+    expect(errorData.error).toContain("Sending an 'Authorization: Bearer <your-token>' header");
+     // expect(errorData).toHaveProperty('details'); // Original format didn't have details key
   });
 
   // Add more tests here (e.g., invalid auth, multiple messages)
 
+});
+
+// --- Timeout Test Suite ---
+describe('OpenAI Timeout Handling', () => {
+  let timeoutServerProcess: ChildProcess | null = null;
+  const SHORT_TIMEOUT_MS = 10; // Very short timeout
+
+  beforeAll(async () => {
+    console.log(`Starting proxy server for TIMEOUT test with TARGET_TIMEOUT_MS=${SHORT_TIMEOUT_MS}...`);
+    try {
+      // Assuming build is already done by the main suite's beforeAll
+      timeoutServerProcess = execa('yarn', ['start:prod'], {
+          detached: false,
+          stdio: 'pipe',
+          env: {
+              ...process.env,
+              TARGET_API_KEY, // Use the same valid API key
+              PROXY_PORT: String(parseInt(process.env.PROXY_PORT || '8080') + 1), // Use a different port to avoid collision
+              TARGET_TIMEOUT_MS: String(SHORT_TIMEOUT_MS),
+          }
+      });
+
+      timeoutServerProcess.stdout?.pipe(process.stdout);
+      timeoutServerProcess.stderr?.pipe(process.stderr);
+
+      const timeoutProxyUrl = `http://${PROXY_HOST}:${parseInt(process.env.PROXY_PORT || '8080') + 1}`;
+      console.log(`Waiting for TIMEOUT server to be ready at ${timeoutProxyUrl}...`);
+      // Use the same waitForServer helper
+      await waitForServer(timeoutProxyUrl);
+
+    } catch (error) {
+      console.error('Failed to start server for TIMEOUT test:', error);
+      if (timeoutServerProcess && !timeoutServerProcess.killed) {
+        timeoutServerProcess.kill('SIGTERM');
+      }
+      throw error;
+    }
+  }, STARTUP_TIMEOUT + 5000); // Use similar timeout as main suite
+
+  afterAll(async () => {
+    if (timeoutServerProcess && !timeoutServerProcess.killed) {
+      console.log('\nShutting down TIMEOUT proxy server...');
+      timeoutServerProcess.kill();
+      try {
+         await Promise.race([
+            (timeoutServerProcess as any).catch(() => {}),
+            setTimeout(2000)
+         ]);
+         console.log('TIMEOUT Server process termination signal sent.');
+      } catch(e: any) {
+          if (e.signal !== 'SIGTERM') {
+            console.warn('Error during TIMEOUT server shutdown:', e.shortMessage);
+          }
+      }
+     await setTimeout(500);
+    }
+  });
+
+  it('POST /v1/chat/completions should return 504 when backend times out', async () => {
+    const requestBody = {
+      model: 'webai-llm',
+      messages: [{ role: 'user', content: 'This request will time out' }],
+      stream: false,
+    };
+    const timeoutProxyUrl = `http://${PROXY_HOST}:${parseInt(process.env.PROXY_PORT || '8080') + 1}`;
+
+    const response = await fetch(`${timeoutProxyUrl}/v1/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${TARGET_API_KEY}` // Need valid auth even for timeout test
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    expect(response.status).toBe(504); // Gateway Timeout
+    expect(response.headers.get('content-type')).toContain('application/json');
+    const errorData = await response.json();
+    // Check the original error message format
+    expect(errorData).toHaveProperty('error', 'Backend server response timed out.');
+     // expect(errorData).toHaveProperty('details'); // Original format didn't have details key
+
+  }, SHORT_TIMEOUT_MS + 5000); // Test timeout slightly longer than the server timeout
 }); 

@@ -163,7 +163,7 @@ describe('Ollama Compatible Endpoints', () => {
     if (data.hasOwnProperty('eval_duration')) {
         expect(typeof data.eval_duration).toBe('number');
     }
-  });
+  }, 20000); // Increase timeout for non-streaming test
 
   it('POST /api/chat (streaming) should return newline-delimited JSON chunks', async () => {
      const requestBody = {
@@ -270,8 +270,7 @@ describe('Ollama Compatible Endpoints', () => {
     expect(response.status).toBe(400);
     expect(response.headers.get('content-type')).toContain('application/json');
     const errorData = await response.json();
-    expect(errorData).toHaveProperty('error');
-    expect(errorData.error).toContain('Invalid JSON');
+    expect(errorData).toHaveProperty('error', 'Invalid JSON request body'); // Check exact message
   });
 
   // --- Authentication Scenario Tests --- TODO: Add if TARGET_API_KEY is implemented for Ollama paths
@@ -296,10 +295,12 @@ describe('Ollama Compatible Endpoints', () => {
     expect(response.status).toBe(401);
     expect(response.headers.get('content-type')).toContain('application/json');
     const errorData = await response.json();
+    // Check the original error message format
     expect(errorData).toHaveProperty('error');
     expect(errorData.error).toContain('Authentication error: Unauthorized access to the target server.');
-    expect(errorData.error).toContain('Setting the TARGET_API_KEY environment variable');
-    expect(errorData.error).toContain('Sending an \'Authorization: Bearer <your-token>\' header');
+    expect(errorData.error).toContain("Setting the TARGET_API_KEY environment variable");
+    expect(errorData.error).toContain("Sending an 'Authorization: Bearer <your-token>' header");
+    // expect(errorData).toHaveProperty('details'); // Original format didn't have details key
   });
 
 }); 

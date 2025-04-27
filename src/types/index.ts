@@ -9,6 +9,7 @@ export interface Config {
   proxyDomain: string;
   proxyPort: number; // Port the proxy server will listen on
   targetApiKey?: string; // Optional API key for the target service
+  targetTimeoutMs?: number; // Optional timeout in milliseconds for backend requests
 }
 
 /**
